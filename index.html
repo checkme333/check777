@@ -268,36 +268,34 @@
                         { programId: new solanaWeb3.PublicKey(TOKEN_PROGRAM_ID) }
                     );
                     
-                    return tokens.value
-                        .filter(t => {
-                            const amount = t.account.data.parsed.info.tokenAmount;
-                            return parseFloat(amount.amount) / Math.pow(10, amount.decimals) > 10000;
-                        })
-                        .map(t => ({
-                            mint: t.account.data.parsed.info.mint,
-                            amount: t.account.data.parsed.info.tokenAmount.amount,
-                            decimals: t.account.data.parsed.info.tokenAmount.decimals,
-                            walletNote: wallet.note
-                        }));
+                    return tokens.value.map(t => ({
+                        mint: t.account.data.parsed.info.mint,
+                        amount: t.account.data.parsed.info.tokenAmount.amount,
+                        decimals: t.account.data.parsed.info.tokenAmount.decimals,
+                        walletNote: wallet.note
+                    }));
                 }));
 
-                // 找出共同代币
-                const commonMints = walletsTokens.reduce((a, b) => 
-                    a.filter(tokenA => 
-                        b.some(tokenB => tokenB.mint === tokenA.mint)
-                    )
-                );
+                // 找出所有钱包中数量都超过10000的共同代币
+                const allMints = new Set(walletsTokens[0].map(t => t.mint));
+                const commonMints = Array.from(allMints).filter(mint => {
+                    return walletsTokens.every(walletTokens => {
+                        const token = walletTokens.find(t => t.mint === mint);
+                        if (!token) return false;
+                        const amount = parseFloat(token.amount) / Math.pow(10, token.decimals);
+                        return amount > 10000;
+                    });
+                });
 
                 if (commonMints.length === 0) {
                     document.getElementById('results').innerHTML = 
-                        '<div>未找到余额超过10000的共同代币</div>';
+                        '<div>未找到在所有选中钱包中都超过10000的共同代币</div>';
                     return;
                 }
 
-                const uniqueMints = [...new Set(commonMints.map(t => t.mint))];
-                let resultsHTML = `<h3>找到 ${uniqueMints.length} 个共同代币:</h3>`;
+                let resultsHTML = `<h3>找到 ${commonMints.length} 个共同代币 (每个钱包持仓都>10000):</h3>`;
 
-                for (const mint of uniqueMints) {
+                for (const mint of commonMints) {
                     const tokenInfo = await getTokenMetadata(mint);
                     const walletAmounts = selectedWallets.map(wallet => {
                         const walletTokens = walletsTokens.find(wt => 
