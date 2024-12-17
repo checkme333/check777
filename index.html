@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solana Token Checker</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 0 20px;
+        }
+        .input-group {
+            margin: 20px 0;
+        }
+        input[type="text"] {
+            width: 70%;
+            padding: 8px;
+            margin-right: 10px;
+        }
+        button {
+            padding: 8px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #walletList {
+            margin: 20px 0;
+        }
+        .wallet-item {
+            margin: 10px 0;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 4px;
+        }
+        .error {
+            color: red;
+            padding: 10px;
+            border: 1px solid red;
+            margin: 10px 0;
+        }
+        #loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Solana Token Checker</h1>
+    
+    <div class="input-group">
+        <input type="text" id="walletAddress" placeholder="输入钱包地址">
+        <button onclick="addWallet()">添加钱包</button>
+    </div>
+
+    <div id="walletList"></div>
+    
+    <button onclick="findCommonTokens()">查找共同代币</button>
+    
+    <div id="results"></div>
+
+    <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
+    <script>
+        // 使用你的 Quicknode URL
+        const connection = new solanaWeb3.Connection('https://sleek-wispy-valley.solana-mainnet.quiknode.pro/f4518761755c013f2f7dea60584bead5b8a1c796');
+        let wallets = [];
+
+        async function addWallet() {
+            const address = document.getElementById('walletAddress').value.trim();
+            if (!address) {
+                alert('请输入钱包地址');
+                return;
+            }
+
+            try {
+                const pubKey = new solanaWeb3.PublicKey(address);
+                wallets.push({address, selected: true});
+                updateWalletList();
+                document.getElementById('walletAddress').value = '';
+            } catch (error) {
+                alert('无效的钱包地址');
+            }
+        }
+
+        function updateWalletList() {
+            const list = document.getElementById('walletList');
+            list.innerHTML = wallets.map((wallet, index) => `
+                <div class="wallet-item">
+                    <input type="checkbox" ${wallet.selected ? 'checked' : ''} 
+                           onchange="toggleWallet(${index})">
+                    <span>${wallet.address}</span>
+                    <button onclick="removeWallet(${index})">删除</button>
+                </div>
+            `).join('');
+        }
+
+        function toggleWallet(index) {
+            wallets[index].selected = !wallets[index].selected;
+            updateWalletList();
+        }
+
+        function removeWallet(index) {
+            wallets.splice(index, 1);
+            updateWalletList();
+        }
+
+        function showLoading(show) {
+            if (show) {
+                const div = document.createElement('div');
+                div.id = 'loading';
+                div.textContent = '加载中...';
+                document.body.appendChild(div);
+            } else {
+                const loading = document.getElementById('loading');
+                if (loading) loading.remove();
+            }
+        }
+
+        async function findCommonTokens() {
+            const selectedWallets = wallets.filter(w => w.selected);
+            
+            if (selectedWallets.length < 2) {
+                alert('请至少选择两个钱包');
+                return;
+            }
+
+            showLoading(true);
+            const results = document.getElementById('results');
+            results.innerHTML = '正在查找...';
+
+            try {
+                const walletsTokens = await Promise.all(selectedWallets.map(async wallet => {
+                    const pubKey = new solanaWeb3.PublicKey(wallet.address);
+                    const tokens = await connection.getParsedTokenAccountsByOwner(
+                        pubKey,
+                        {
+                            programId: new solanaWeb3.PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')
+                        }
+                    );
+                    return tokens.value
+                        .map(t => t.account.data.parsed.info.mint)
+                        .filter(mint => mint); // 过滤掉空值
+                }));
+
+                // 找出共同代币
+                const commonTokens = walletsTokens.reduce((a, b) => 
+                    a.filter(token => b.includes(token))
+                );
+
+                // 显示结果
+                if (commonTokens.length === 0) {
+                    results.innerHTML = '未找到共同的代币';
+                } else {
+                    results.innerHTML = `
+                        <h3>找到 ${commonTokens.length} 个共同代币:</h3>
+                        <ul>
+                            ${commonTokens.map(token => `<li>${token}</li>`).join('')}
+                        </ul>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                results.innerHTML = `<div class="error">错误: ${error.message}</div>`;
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // 测试连接
+        async function testConnection() {
+            try {
+                const slot = await connection.getSlot();
+                console.log('连接成功，当前 slot:', slot);
+            } catch (error) {
+                console.error('连接测试失败:', error);
+                document.getElementById('results').innerHTML = 
+                    '<div class="error">RPC 连接失败，请检查配置</div>';
+            }
+        }
+
+        // 页面加载完成后测试连接
+        window.addEventListener('DOMContentLoaded', testConnection);
+    </script>
+</body>
+</html>
