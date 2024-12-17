@@ -7,7 +7,7 @@
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 800px;
+            max-width: 1200px;
             margin: 20px auto;
             padding: 0 20px;
         }
@@ -23,7 +23,7 @@
             border-radius: 4px;
         }
         #walletAddress {
-            width: 400px;
+            width: 500px;
         }
         #walletNote {
             width: 200px;
@@ -39,15 +39,6 @@
         button:hover {
             background-color: #45a049;
         }
-        button.delete-btn {
-            background-color: #ff4444;
-        }
-        button.delete-btn:hover {
-            background-color: #cc0000;
-        }
-        #walletList {
-            margin: 20px 0;
-        }
         .wallet-item {
             margin: 10px 0;
             padding: 15px;
@@ -60,21 +51,41 @@
         .wallet-info {
             flex-grow: 1;
         }
-        .wallet-address {
-            font-family: monospace;
-            word-break: break-all;
-        }
         .wallet-note {
             color: #666;
-            font-style: italic;
-            margin-top: 5px;
+            font-weight: bold;
         }
-        .error {
-            color: red;
-            padding: 10px;
-            border: 1px solid red;
+        .wallet-address {
+            font-family: monospace;
+            color: #888;
+            font-size: 0.9em;
+        }
+        .token-item {
             margin: 10px 0;
+            padding: 15px;
+            background: #f8f8f8;
             border-radius: 4px;
+            border-left: 4px solid #4CAF50;
+        }
+        .token-name {
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+        .token-contract {
+            font-family: monospace;
+            color: #666;
+            margin: 5px 0;
+            word-break: break-all;
+        }
+        .token-amount {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        .copy-button {
+            background-color: #ddd;
+            padding: 2px 8px;
+            font-size: 0.8em;
+            margin-left: 10px;
         }
         #loading {
             position: fixed;
@@ -89,65 +100,9 @@
         }
         .controls {
             margin: 20px 0;
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-        #results {
-            margin-top: 20px;
-        }
-        .token-info {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
             padding: 10px;
-            margin: 5px 0;
-            background: #f5f5f5;
+            background: #f0f0f0;
             border-radius: 4px;
-        }
-        .token-name {
-            font-weight: bold;
-            margin-right: 10px;
-        }
-        .token-address {
-            color: #666;
-            font-family: monospace;
-            font-size: 0.9em;
-        }
-        .loading-token {
-            color: #666;
-            font-style: italic;
-        }
-        .token-list {
-            list-style: none;
-            padding: 0;
-        }
-        .token-list li {
-            padding: 10px;
-            margin: 5px 0;
-            background: #f5f5f5;
-            border-radius: 4px;
-        }
-        @media (max-width: 600px) {
-            #walletAddress {
-                width: 100%;
-            }
-            #walletNote {
-                width: 100%;
-            }
-            .input-group {
-                flex-direction: column;
-            }
-            .controls {
-                flex-wrap: wrap;
-            }
-            .token-info {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-            .token-address {
-                margin-top: 5px;
-            }
         }
     </style>
 </head>
@@ -155,19 +110,18 @@
     <h1>Solana Token Checker</h1>
     
     <div class="input-group">
-        <input type="text" id="walletAddress" placeholder="输入钱包地址">
-        <input type="text" id="walletNote" placeholder="备注（可选）">
+        <input type="text" id="walletAddress" placeholder="输入 Solana 钱包地址">
+        <input type="text" id="walletNote" placeholder="钱包备注（方便识别）">
         <button onclick="addWallet()">添加钱包</button>
     </div>
 
     <div class="controls">
         <button onclick="selectAll(true)">全选</button>
         <button onclick="selectAll(false)">取消全选</button>
-        <button onclick="findCommonTokens()">查找共同代币</button>
+        <button onclick="findCommonTokens()">查找共同代币(>10000)</button>
     </div>
 
     <div id="walletList"></div>
-    
     <div id="results"></div>
 
     <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
@@ -175,77 +129,8 @@
         const connection = new solanaWeb3.Connection('https://sleek-wispy-valley.solana-mainnet.quiknode.pro/f4518761755c013f2f7dea60584bead5b8a1c796');
         let wallets = [];
 
-        // 添加 Metaplex 程序 ID
-        const METADATA_PROGRAM_ID = 'metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s';
         const TOKEN_PROGRAM_ID = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
-
-        // 获取代币元数据地址
-        async function getMetadataAddress(tokenMint) {
-            const [publicKey] = await solanaWeb3.PublicKey.findProgramAddress(
-                [
-                    Buffer.from('metadata'),
-                    new solanaWeb3.PublicKey(METADATA_PROGRAM_ID).toBuffer(),
-                    new solanaWeb3.PublicKey(tokenMint).toBuffer(),
-                ],
-                new solanaWeb3.PublicKey(METADATA_PROGRAM_ID)
-            );
-            return publicKey;
-        }
-
-        // 获取代币元数据
-        async function getTokenMetadata(tokenMint) {
-            try {
-                const metadataAddress = await getMetadataAddress(tokenMint);
-                const accountInfo = await connection.getAccountInfo(metadataAddress);
-                
-                if (!accountInfo) {
-                    return { name: 'Unknown Token', symbol: '???', mint: tokenMint };
-                }
-
-                // 解析元数据
-                const metadata = decodeMetadata(accountInfo.data);
-                return {
-                    name: metadata.data.name.replace(/\0/g, ''),
-                    symbol: metadata.data.symbol.replace(/\0/g, ''),
-                    mint: tokenMint
-                };
-            } catch (error) {
-                console.error('Error fetching metadata for', tokenMint, error);
-                return { name: 'Unknown Token', symbol: '???', mint: tokenMint };
-            }
-        }
-
-        // 解码元数据
-        function decodeMetadata(data) {
-            let offset = 0;
-            
-            // 跳过键值（1字节）
-            offset += 1;
-            
-            // 更新授权键（32字节）
-            offset += 32;
-            
-            // mint地址（32字节）
-            offset += 32;
-            
-            // 名称长度（4字节）和名称
-            const nameLength = data[offset];
-            offset += 4;
-            const name = new TextDecoder().decode(data.slice(offset, offset + nameLength));
-            offset += nameLength;
-            
-            // 符号长度（4字节）和符号
-            const symbolLength = data[offset];
-            offset += 4;
-            const symbol = new TextDecoder().decode(data.slice(offset, offset + symbolLength));
-            
-            return {
-                data: {
-                    name,
-                    symbol
-                }
-            };
-        }
+        const METADATA_PROGRAM_ID = 'metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s';
 
         async function addWallet() {
             const address = document.getElementById('walletAddress').value.trim();
@@ -256,8 +141,13 @@
                 return;
             }
 
+            if (!note) {
+                alert('请输入钱包备注');
+                return;
+            }
+
             try {
-                const pubKey = new solanaWeb3.PublicKey(address);
+                new solanaWeb3.PublicKey(address);
                 if (wallets.some(w => w.address === address)) {
                     alert('该钱包地址已添加');
                     return;
@@ -282,12 +172,60 @@
                     <input type="checkbox" ${wallet.selected ? 'checked' : ''} 
                            onchange="toggleWallet(${index})">
                     <div class="wallet-info">
+                        <div class="wallet-note">${wallet.note}</div>
                         <div class="wallet-address">${wallet.address}</div>
-                        ${wallet.note ? `<div class="wallet-note">${wallet.note}</div>` : ''}
                     </div>
-                    <button class="delete-btn" onclick="removeWallet(${index})">删除</button>
+                    <button onclick="removeWallet(${index})">删除</button>
                 </div>
             `).join('');
+        }
+
+        async function getMetadataAddress(mint) {
+            const [publicKey] = await solanaWeb3.PublicKey.findProgramAddress(
+                [
+                    Buffer.from('metadata'),
+                    new solanaWeb3.PublicKey(METADATA_PROGRAM_ID).toBuffer(),
+                    new solanaWeb3.PublicKey(mint).toBuffer(),
+                ],
+                new solanaWeb3.PublicKey(METADATA_PROGRAM_ID)
+            );
+            return publicKey;
+        }
+
+        async function getTokenMetadata(mint) {
+            try {
+                const metadataAddress = await getMetadataAddress(mint);
+                const accountInfo = await connection.getAccountInfo(metadataAddress);
+                
+                if (!accountInfo) {
+                    return { name: 'Unknown Token', symbol: '???', mint };
+                }
+
+                const metadata = decodeMetadata(accountInfo.data);
+                return {
+                    name: metadata.data.name.replace(/\0/g, ''),
+                    symbol: metadata.data.symbol.replace(/\0/g, ''),
+                    mint
+                };
+            } catch (error) {
+                console.error('Error fetching metadata for', mint, error);
+                return { name: 'Unknown Token', symbol: '???', mint };
+            }
+        }
+
+        function decodeMetadata(data) {
+            let offset = 1 + 32 + 32; // Skip key, update authority, and mint
+            
+            const nameLength = data[offset];
+            offset += 4;
+            const name = new TextDecoder().decode(data.slice(offset, offset + nameLength));
+            offset += nameLength;
+            
+            const symbolLength = data[offset];
+            offset += 4;
+            const symbol = new TextDecoder().decode(data.slice(offset, offset + symbolLength));
+            
+            return { data: { name, symbol } };
         }
 
         function toggleWallet(index) {
@@ -301,22 +239,16 @@
         }
 
         function removeWallet(index) {
-            if (confirm('确定要删除这个钱包吗？')) {
-                wallets.splice(index, 1);
-                updateWalletList();
-            }
+            wallets.splice(index, 1);
+            updateWalletList();
         }
 
-        function showLoading(show) {
-            const existingLoading = document.getElementById('loading');
-            if (show && !existingLoading) {
-                const div = document.createElement('div');
-                div.id = 'loading';
-                div.textContent = '加载中...';
-                document.body.appendChild(div);
-            } else if (!show && existingLoading) {
-                existingLoading.remove();
-            }
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                alert('已复制到剪贴板');
+            }).catch(err => {
+                console.error('复制失败:', err);
+            });
         }
 
         async function findCommonTokens() {
@@ -327,88 +259,80 @@
                 return;
             }
 
-            showLoading(true);
-            const results = document.getElementById('results');
-            results.innerHTML = '正在查找...';
+            document.getElementById('results').innerHTML = '<div>正在查找...</div>';
 
             try {
                 const walletsTokens = await Promise.all(selectedWallets.map(async wallet => {
-                    const pubKey = new solanaWeb3.PublicKey(wallet.address);
                     const tokens = await connection.getParsedTokenAccountsByOwner(
-                        pubKey,
-                        {
-                            programId: new solanaWeb3.PublicKey(TOKEN_PROGRAM_ID)
-                        }
+                        new solanaWeb3.PublicKey(wallet.address),
+                        { programId: new solanaWeb3.PublicKey(TOKEN_PROGRAM_ID) }
                     );
                     
                     return tokens.value
                         .filter(t => {
-                            const tokenAmount = t.account.data.parsed.info.tokenAmount;
-                            return parseFloat(tokenAmount.amount) > 0;
+                            const amount = t.account.data.parsed.info.tokenAmount;
+                            return parseFloat(amount.amount) / Math.pow(10, amount.decimals) > 10000;
                         })
                         .map(t => ({
                             mint: t.account.data.parsed.info.mint,
-                            wallet: wallet.note || wallet.address
+                            amount: t.account.data.parsed.info.tokenAmount.amount,
+                            decimals: t.account.data.parsed.info.tokenAmount.decimals,
+                            walletNote: wallet.note
                         }));
                 }));
 
                 // 找出共同代币
-                const allMints = walletsTokens.reduce((a, b) => 
-                    a.filter(tokenA => b.some(tokenB => tokenB.mint === tokenA.mint))
+                const commonMints = walletsTokens.reduce((a, b) => 
+                    a.filter(tokenA => 
+                        b.some(tokenB => tokenB.mint === tokenA.mint)
+                    )
                 );
 
-                // 显示结果
-                if (allMints.length === 0) {
-                    results.innerHTML = '<div style="margin-top: 20px;">未找到共同的代币</div>';
-                } else {
-                    const uniqueMints = [...new Set(allMints.map(t => t.mint))];
-                    
-                    results.innerHTML = `
-                        <h3>找到 ${uniqueMints.length} 个共同代币:</h3>
-                        <div id="tokenList"></div>
-                    `;
-
-                    const tokenList = document.getElementById('tokenList');
-
-                    // 为每个代币获取元数据
-                    for (const mint of uniqueMints) {
-                        const tokenDiv = document.createElement('div');
-                        tokenDiv.className = 'token-info';
-                        tokenDiv.innerHTML = `
-                            <span class="loading-token">Loading token info...</span>
-                            <span class="token-address">${mint}</span>
-                        `;
-                        tokenList.appendChild(tokenDiv);
-
-                        const tokenInfo = await getTokenMetadata(mint);
-                        tokenDiv.innerHTML = `
-                            <span class="token-name">${tokenInfo.name} (${tokenInfo.symbol})</span>
-                            <span class="token-address">${mint}</span>
-                        `;
-                    }
+                if (commonMints.length === 0) {
+                    document.getElementById('results').innerHTML = 
+                        '<div>未找到余额超过10000的共同代币</div>';
+                    return;
                 }
+
+                const uniqueMints = [...new Set(commonMints.map(t => t.mint))];
+                let resultsHTML = `<h3>找到 ${uniqueMints.length} 个共同代币:</h3>`;
+
+                for (const mint of uniqueMints) {
+                    const tokenInfo = await getTokenMetadata(mint);
+                    const walletAmounts = selectedWallets.map(wallet => {
+                        const walletTokens = walletsTokens.find(wt => 
+                            wt.some(t => t.walletNote === wallet.note)
+                        );
+                        const token = walletTokens?.find(t => t.mint === mint);
+                        if (token) {
+                            const amount = parseFloat(token.amount) / Math.pow(10, token.decimals);
+                            return `${wallet.note}: ${amount.toLocaleString()}`;
+                        }
+                        return null;
+                    }).filter(Boolean);
+
+                    resultsHTML += `
+                        <div class="token-item">
+                            <div class="token-name">
+                                ${tokenInfo.name} (${tokenInfo.symbol})
+                                <button class="copy-button" onclick="copyToClipboard('${mint}')">复制合约地址</button>
+                            </div>
+                            <div class="token-contract">${mint}</div>
+                            <div class="token-holdings">
+                                ${walletAmounts.join('<br>')}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                document.getElementById('results').innerHTML = resultsHTML;
+
             } catch (error) {
                 console.error('Error:', error);
-                results.innerHTML = `<div class="error">错误: ${error.message}</div>`;
-            } finally {
-                showLoading(false);
-            }
-        }
-
-        // 测试连接
-        async function testConnection() {
-            try {
-                const slot = await connection.getSlot();
-                console.log('连接成功，当前 slot:', slot);
-            } catch (error) {
-                console.error('连接测试失败:', error);
                 document.getElementById('results').innerHTML = 
-                    '<div class="error">RPC 连接失败，请检查配置</div>';
+                    `<div style="color: red;">错误: ${error.message}</div>`;
             }
         }
-
-        // 页面加载完成后测试连接
-        window.addEventListener('DOMContentLoaded', testConnection);
     </script>
 </body>
 </html>
